@@ -17,7 +17,7 @@ impl fmt::Display for LexerError {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Token {
     PlusToken,
     MinusToken,
