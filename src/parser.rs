@@ -1,6 +1,6 @@
 use crate::lexer::*;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Node {
     PlusNode,
     MinusNode,
@@ -84,8 +84,10 @@ impl Parser {
         }
     }
 
-    pub fn parse_all(&mut self) {
+    pub fn parse_all(&mut self) -> Node {
         let x = self.parse_expr(&self.input.clone(), false);
-        println!("{:#?}", x);
+        // println!("{:#?}", x);
+
+        x
     }
 }
