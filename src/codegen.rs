@@ -5,7 +5,7 @@ use inkwell::execution_engine::{ExecutionEngine, JitFunction};
 use inkwell::module::{Linkage, Module};
 use inkwell::targets::{InitializationConfig, Target};
 use inkwell::types::{FunctionType, IntType, PointerType};
-use inkwell::values::AnyValue;
+use inkwell::values::{AnyValue, FunctionValue, PointerValue};
 use inkwell::values::{BasicValueEnum, IntValue};
 use inkwell::AddressSpace;
 use inkwell::OptimizationLevel;
@@ -102,39 +102,11 @@ impl<'ctx> Codegen<'ctx> {
             Node::Expr(expr_val) => {
                 for x in expr_val.iter() {
                     match x {
-                        Node::PlusNode => {
-                            let amount_const = self.types.i8_type.const_int(1 as u64, false);
-                            let ptr_load = self
-                                .builder
-                                .build_load(data_alloca, "load_ptr")
-                                .into_pointer_value();
-                            let ptr_val = self.builder.build_load(ptr_load, "ptr_val");
-                            let result = self.builder.build_int_add(
-                                ptr_val.into_int_value(),
-                                amount_const,
-                                "add_data_ptr",
-                            );
-                            self.builder.build_store(ptr_load, result);
-                        }
-                        Node::PrintCurrPosNode => {
-                            let pc_char = self.builder.build_load(
-                                self.builder
-                                    .build_load(data_alloca, "ptr_val")
-                                    .into_pointer_value(),
-                                "load_ptr_val",
-                            );
-
-                            let sext = self.builder.build_int_s_extend(
-                                pc_char.into_int_value(),
-                                self.context.i32_type(),
-                                "putchar_sign",
-                            );
-                            self.builder.build_call(
-                                putchar_fn_value,
-                                &[sext.into()],
-                                "putchar_call",
-                            );
-                        }
+                        Node::PlusNode => self.emit_change_data_value(data_alloca, 1),
+                        Node::MinusNode => self.emit_change_data_value(data_alloca, -1),
+                        Node::IncrementPtrNode => self.emit_move_pointer(data_alloca, 1),
+                        Node::DecrementPtrNode => self.emit_move_pointer(data_alloca, -1),
+                        Node::PrintCurrPosNode => self.emit_putchar(data_alloca, putchar_fn_value),
                         _ => {}
                     }
                 }
@@ -144,18 +116,66 @@ impl<'ctx> Codegen<'ctx> {
             }
         }
 
-        // Free the pointer
         self.builder.build_free(
             self.builder
                 .build_load(data_alloca, "load")
                 .into_pointer_value(),
         );
 
-        let return_zero_const = self.types.i32_type.const_int(0, false);
-        self.builder.build_return(Some(&return_zero_const));
+        self.builder
+            .build_return(Some(&self.types.i32_type.const_int(0, false)));
 
+        // TODO: Build actual binary
         self.module.print_to_stderr();
     }
 
-    fn generate_basic_block() {}
+    fn emit_change_data_value(&self, data_ptr: PointerValue, value: i32) {
+        let amount_const = self.types.i8_type.const_int(value as u64, false);
+
+        let ptr_load = self
+            .builder
+            .build_load(data_ptr, "load_ptr")
+            .into_pointer_value();
+
+        let ptr_val = self.builder.build_load(ptr_load, "ptr_val");
+
+        let result =
+            self.builder
+                .build_int_add(ptr_val.into_int_value(), amount_const, "add_data_ptr");
+
+        self.builder.build_store(ptr_load, result);
+    }
+
+    fn emit_move_pointer(&self, data_ptr: PointerValue, value: i32) {
+        let amount_const = self.types.i32_type.const_int(value as u64, false);
+
+        let ptr_load = self
+            .builder
+            .build_load(data_ptr, "load_ptr")
+            .into_pointer_value();
+
+        let result = unsafe {
+            self.builder
+                .build_in_bounds_gep(ptr_load, &[amount_const], "move_ptr")
+        };
+
+        self.builder.build_store(data_ptr, result);
+    }
+
+    fn emit_putchar(&self, data_ptr: PointerValue, putchar_callee: FunctionValue) {
+        let pc_char = self.builder.build_load(
+            self.builder
+                .build_load(data_ptr, "load_ptr")
+                .into_pointer_value(),
+            "load_ptr_val",
+        );
+
+        let sext = self.builder.build_int_s_extend(
+            pc_char.into_int_value(),
+            self.context.i32_type(),
+            "putchar_sign",
+        );
+        self.builder
+            .build_call(putchar_callee, &[sext.into()], "putchar_call");
+    }
 }
