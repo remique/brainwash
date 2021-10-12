@@ -3,12 +3,15 @@ use inkwell::context::Context;
 use inkwell::execution_engine;
 use inkwell::execution_engine::{ExecutionEngine, JitFunction};
 use inkwell::module::{Linkage, Module};
-use inkwell::targets::{InitializationConfig, Target};
+use inkwell::targets::{
+    CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine, TargetTriple,
+};
 use inkwell::types::{FunctionType, IntType, PointerType};
 use inkwell::values::{AnyValue, FunctionValue, PointerValue};
 use inkwell::values::{BasicValueEnum, IntValue};
 use inkwell::AddressSpace;
 use inkwell::OptimizationLevel;
+use std::path::Path;
 
 use crate::parser::Node;
 
@@ -126,7 +129,30 @@ impl<'ctx> Codegen<'ctx> {
             .build_return(Some(&self.types.i32_type.const_int(0, false)));
 
         // TODO: Build actual binary
-        self.module.print_to_stderr();
+        // self.module.print_to_stderr();
+        self.module.print_to_file(Path::new("./main.ll")).unwrap();
+
+        use std::process::Command;
+        Command::new("llvm-as")
+            .args(&["main.ll", "-o", "main.bc"])
+            .output()
+            .expect("failed llvm-as");
+
+        Command::new("llc")
+            .args(&["-filetype=obj", "main.bc", "-o", "main.o"])
+            .output()
+            .expect("failed llc");
+
+        Command::new("clang")
+            .args(&["main.o", "-o", "main"])
+            .output()
+            .expect("failed clang");
+
+        // remove intermediate files
+        Command::new("rm")
+            .args(&["-rf", "main.bc", "main.ll", "main.o"])
+            .output()
+            .expect("failed rm");
     }
 
     fn emit_change_data_value(&self, data_ptr: PointerValue, value: i32) {
