@@ -9,10 +9,38 @@ use crate::codegen::*;
 use crate::lexer::*;
 use crate::parser::*;
 
+use clap::{App, AppSettings, Arg, SubCommand};
 use inkwell::context::Context;
 
 fn main() {
-    let l = Lexer::new("test.bf");
+    let matches = App::new("Brainwash")
+        .setting(AppSettings::DisableVersion)
+        .author("Emil Jaszczuk <emj1054@gmail.com>")
+        .arg(
+            Arg::with_name("INPUT")
+                .help("Sets the input file to compile")
+                .required(true)
+                .index(1),
+        )
+        .arg(
+            Arg::with_name("profiler")
+                .short("p")
+                .long("profiler")
+                .multiple(false)
+                .help("Shows how long each step takes"),
+        )
+        .arg(
+            Arg::with_name("output")
+                .short("o")
+                .long("output")
+                .value_name("FILE")
+                .help("Sets the output file")
+                .default_value("bfo")
+                .takes_value(true),
+        )
+        .get_matches();
+
+    let l = Lexer::new(matches.value_of("INPUT").unwrap());
     l.check_loops().unwrap();
 
     let mut p = Parser::new(l.tokens);
