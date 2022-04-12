@@ -11,8 +11,9 @@ use crate::parser::*;
 
 use clap::{App, AppSettings, Arg, SubCommand};
 use inkwell::context::Context;
+use std::error::Error;
 
-fn main() {
+fn main() -> Result<(), Box<dyn Error>> {
     let matches = App::new("Brainwash")
         .setting(AppSettings::DisableVersion)
         .author("Emil Jaszczuk <emj1054@gmail.com>")
@@ -40,7 +41,7 @@ fn main() {
         )
         .get_matches();
 
-    let l = Lexer::new(matches.value_of("INPUT").unwrap());
+    let l = Lexer::new(matches.value_of("INPUT").unwrap())?;
     l.check_loops().unwrap();
 
     let mut p = Parser::new(l.tokens);
@@ -63,4 +64,6 @@ fn main() {
     };
 
     cdg.generate_llvm();
+
+    Ok(())
 }
