@@ -7,6 +7,7 @@ pub enum Node {
     IncrementPtrNode,
     DecrementPtrNode,
     PrintCurrPosNode,
+    LoopCloseNode,
 
     Expr(Box<Vec<Node>>),
     LoopExpr(Box<Vec<Node>>),
@@ -30,9 +31,6 @@ impl Parser {
         while let Some(tok) = iq.next() {
             match tok {
                 Token::PlusToken => {
-                    // TODO: check if last item in x is plusnode, if yes then
-                    // edit out the plusnode and add 1
-                    // then push Node::PlusNode(count+1)
                     x.push(Node::PlusNode);
                     self.position += 1;
                 }
@@ -69,9 +67,10 @@ impl Parser {
                     x.push(asdf);
 
                     // skip loop-length times
-                    iq.nth(idx - pos);
+                    iq.nth(idx - pos - 1);
                 }
                 Token::RightBracketToken => {
+                    x.push(Node::LoopCloseNode);
                     self.position += 1;
                 }
             }

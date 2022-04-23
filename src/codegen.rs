@@ -1,3 +1,4 @@
+use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::execution_engine;
@@ -10,6 +11,7 @@ use inkwell::types::{FunctionType, IntType, PointerType};
 use inkwell::values::{AnyValue, FunctionValue, PointerValue};
 use inkwell::values::{BasicValueEnum, IntValue};
 use inkwell::AddressSpace;
+use inkwell::IntPredicate;
 use inkwell::OptimizationLevel;
 use std::path::Path;
 
@@ -47,6 +49,13 @@ impl<'ctx> Types<'ctx> {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct Loop<'ctx> {
+    check: BasicBlock<'ctx>,
+    if_true: BasicBlock<'ctx>,
+    if_false: BasicBlock<'ctx>,
+}
+
 pub struct Codegen<'ctx> {
     pub input: Node,
     pub context: &'ctx Context,
@@ -54,10 +63,13 @@ pub struct Codegen<'ctx> {
     pub builder: Builder<'ctx>,
     pub execution_engine: ExecutionEngine<'ctx>,
     pub types: Types<'ctx>,
+    // pub loop_stack: Vec<Loop<'ctx>>,
 }
 
 impl<'ctx> Codegen<'ctx> {
     pub fn generate_llvm(&self) {
+        let mut loop_stack: Vec<Loop> = Vec::new();
+
         // Values
         let main_fn_value = self
             .module
@@ -101,22 +113,14 @@ impl<'ctx> Codegen<'ctx> {
         self.builder.build_store(data_alloca, calloc_data_basic_val);
         self.builder.build_store(ptr_alloca, calloc_data_basic_val);
 
-        match &self.input {
-            Node::Expr(expr_val) => {
-                for x in expr_val.iter() {
-                    match x {
-                        Node::PlusNode => self.emit_change_data_value(data_alloca, 1),
-                        Node::MinusNode => self.emit_change_data_value(data_alloca, -1),
-                        Node::IncrementPtrNode => self.emit_move_pointer(data_alloca, 1),
-                        Node::DecrementPtrNode => self.emit_move_pointer(data_alloca, -1),
-                        Node::PrintCurrPosNode => self.emit_putchar(data_alloca, putchar_fn_value),
-                        _ => {}
-                    }
-                }
-            }
-            _ => {
-                // error
-            }
+        if let Node::Expr(expr_val) = &self.input {
+            self.match_input(
+                expr_val,
+                data_alloca,
+                putchar_fn_value,
+                main_fn_value,
+                loop_stack,
+            );
         }
 
         self.builder.build_free(
@@ -150,26 +154,97 @@ impl<'ctx> Codegen<'ctx> {
 
         // remove intermediate files
         Command::new("rm")
-            .args(&["-rf", "main.bc", "main.ll", "main.o"])
+            .args(&["-rf", "main.bc", "main.o"])
             .output()
             .expect("failed rm");
     }
 
-    fn emit_change_data_value(&self, data_ptr: PointerValue, value: i32) {
+    fn match_input(
+        &self,
+        input: &Vec<Node>,
+        data_alloca: PointerValue<'ctx>,
+        putchar_fn_value: FunctionValue,
+        main_fn_value: FunctionValue,
+        mut loop_stack: Vec<Loop<'ctx>>,
+    ) {
+        for x in input.iter() {
+            match x {
+                Node::PlusNode => self.emit_change_data_value(data_alloca, 1),
+                Node::MinusNode => self.emit_change_data_value(data_alloca, -1),
+                Node::IncrementPtrNode => self.emit_move_pointer(data_alloca, 1),
+                Node::DecrementPtrNode => self.emit_move_pointer(data_alloca, -1),
+                Node::PrintCurrPosNode => self.emit_putchar(data_alloca, putchar_fn_value),
+                Node::LoopExpr(expr_val) => {
+                    self.build_start_loop(&mut loop_stack, data_alloca, main_fn_value);
+                    self.match_input(
+                        expr_val,
+                        data_alloca,
+                        putchar_fn_value,
+                        main_fn_value,
+                        loop_stack.clone(),
+                    );
+                }
+                Node::LoopCloseNode => self.build_loop_close(&mut loop_stack),
+                _ => {}
+            }
+        }
+    }
+
+    fn build_start_loop(
+        &self,
+        loop_stack: &mut Vec<Loop<'ctx>>,
+        data_ptr: PointerValue<'ctx>,
+        main_fn_value: FunctionValue,
+    ) {
+        let new_loop = Loop {
+            check: self.context.append_basic_block(main_fn_value, "check_loop"),
+            if_true: self
+                .context
+                .append_basic_block(main_fn_value, "if_true_loop"),
+            if_false: self
+                .context
+                .append_basic_block(main_fn_value, "if_false_loop"),
+        };
+
+        loop_stack.push(new_loop);
+        let last_one = loop_stack.last().unwrap();
+
+        self.builder.build_unconditional_branch(last_one.check);
+        self.builder.position_at_end(last_one.check);
+
+        let zero = self.types.i8_type.const_int(0, false);
+        let value = self.load_current_value(data_ptr);
+
+        let compare = self
+            .builder
+            .build_int_compare(IntPredicate::NE, value, zero, "compare");
+
+        self.builder
+            .build_conditional_branch(compare, last_one.if_true, last_one.if_false);
+
+        self.builder.position_at_end(last_one.if_true);
+    }
+
+    fn build_loop_close(&self, loop_stack: &mut Vec<Loop<'ctx>>) {
+        if let Some(block) = loop_stack.pop() {
+            self.builder.build_unconditional_branch(block.check);
+            self.builder.position_at_end(block.if_false);
+        }
+    }
+
+    fn emit_change_data_value(&self, data_ptr: PointerValue<'ctx>, value: i32) {
         let amount_const = self.types.i8_type.const_int(value as u64, false);
 
-        let ptr_load = self
-            .builder
-            .build_load(data_ptr, "load_ptr")
-            .into_pointer_value();
+        let value = self.load_current_value(data_ptr);
 
-        let ptr_val = self.builder.build_load(ptr_load, "ptr_val");
+        let result = self.builder.build_int_add(
+            self.load_current_value(data_ptr),
+            amount_const,
+            "add_data_ptr",
+        );
 
-        let result =
-            self.builder
-                .build_int_add(ptr_val.into_int_value(), amount_const, "add_data_ptr");
-
-        self.builder.build_store(ptr_load, result);
+        self.builder
+            .build_store(self.load_current_pointer(data_ptr), result);
     }
 
     fn emit_move_pointer(&self, data_ptr: PointerValue, value: i32) {
@@ -203,5 +278,23 @@ impl<'ctx> Codegen<'ctx> {
         );
         self.builder
             .build_call(putchar_callee, &[sext.into()], "putchar_call");
+    }
+
+    /// Helper function that loads the value stored at current pointer
+    fn load_current_value(&self, data_ptr: PointerValue<'ctx>) -> IntValue<'ctx> {
+        let ptr_load = self
+            .builder
+            .build_load(data_ptr, "load_ptr")
+            .into_pointer_value();
+
+        self.builder
+            .build_load(ptr_load, "ptr_val")
+            .into_int_value()
+    }
+
+    fn load_current_pointer(&self, data_ptr: PointerValue<'ctx>) -> PointerValue<'ctx> {
+        self.builder
+            .build_load(data_ptr, "load_ptr")
+            .into_pointer_value()
     }
 }
