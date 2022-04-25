@@ -25,7 +25,7 @@ impl Parser {
         Self { input, position: 0 }
     }
 
-    pub fn parse_expr(&mut self, vect: &[Token], is_loop: bool) -> Node {
+    fn parse_expr(&mut self, vect: &[Token], is_loop: bool) -> Node {
         let mut result: Vec<Node> = Vec::new();
 
         let mut vect_iter = vect.iter();

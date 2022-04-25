@@ -13,6 +13,8 @@ use inkwell::values::{BasicValueEnum, IntValue};
 use inkwell::AddressSpace;
 use inkwell::IntPredicate;
 use inkwell::OptimizationLevel;
+
+use std::fmt::Display;
 use std::path::Path;
 
 use crate::parser::Node;
@@ -67,8 +69,8 @@ pub struct Codegen<'ctx> {
 }
 
 impl<'ctx> Codegen<'ctx> {
-    pub fn generate_llvm(&self) {
-        let mut loop_stack: Vec<Loop> = Vec::new();
+    pub fn generate_llvm<T: AsRef<Path> + Display>(&self, filename: T) {
+        let loop_stack: Vec<Loop> = Vec::new();
 
         // Values
         let main_fn_value = self
@@ -132,31 +134,9 @@ impl<'ctx> Codegen<'ctx> {
         self.builder
             .build_return(Some(&self.types.i32_type.const_int(0, false)));
 
-        // TODO: Build actual binary
-        // self.module.print_to_stderr();
-        self.module.print_to_file(Path::new("./main.ll")).unwrap();
-
-        use std::process::Command;
-        Command::new("llvm-as")
-            .args(&["main.ll", "-o", "main.bc"])
-            .output()
-            .expect("failed llvm-as");
-
-        Command::new("llc")
-            .args(&["-filetype=obj", "main.bc", "-o", "main.o"])
-            .output()
-            .expect("failed llc");
-
-        Command::new("clang")
-            .args(&["main.o", "-o", "main"])
-            .output()
-            .expect("failed clang");
-
-        // remove intermediate files
-        Command::new("rm")
-            .args(&["-rf", "main.bc", "main.o"])
-            .output()
-            .expect("failed rm");
+        self.module
+            .print_to_file(format!("./{}.ll", filename))
+            .unwrap();
     }
 
     fn match_input(
@@ -167,8 +147,8 @@ impl<'ctx> Codegen<'ctx> {
         main_fn_value: FunctionValue,
         mut loop_stack: Vec<Loop<'ctx>>,
     ) {
-        for x in input.iter() {
-            match x {
+        for node_type in input.iter() {
+            match node_type {
                 Node::PlusNode => self.emit_change_data_value(data_alloca, 1),
                 Node::MinusNode => self.emit_change_data_value(data_alloca, -1),
                 Node::IncrementPtrNode => self.emit_move_pointer(data_alloca, 1),

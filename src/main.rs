@@ -1,10 +1,12 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
 
+mod binary;
 mod codegen;
 mod lexer;
 mod parser;
 
+use crate::binary::*;
 use crate::codegen::*;
 use crate::lexer::*;
 use crate::parser::*;
@@ -63,7 +65,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         types,
     };
 
-    cdg.generate_llvm();
+    cdg.generate_llvm("main");
+
+    let bdr = BinaryGenerator::new("main");
+    bdr.compile()?;
 
     Ok(())
 }
