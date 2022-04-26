@@ -4,15 +4,19 @@
 mod binary;
 mod codegen;
 mod lexer;
+mod optimizer;
 mod parser;
 
 use crate::binary::*;
 use crate::codegen::*;
 use crate::lexer::*;
+use crate::optimizer::*;
 use crate::parser::*;
 
 use clap::{App, AppSettings, Arg, SubCommand};
 use inkwell::context::Context;
+use inkwell::passes::PassManager;
+use inkwell::values::FunctionValue;
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -56,6 +60,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let types = Types::new(&context);
 
+    let opt: optimizer::OptWrapper<FunctionValue> = OptWrapper::new(&module);
+    opt.optimize();
+
     let cdg = Codegen {
         input: nodes,
         context: &context,
@@ -63,6 +70,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         builder,
         execution_engine,
         types,
+        passes: opt.pass_manager,
     };
 
     cdg.generate_llvm("main");

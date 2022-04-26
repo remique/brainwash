@@ -4,6 +4,7 @@ use inkwell::context::Context;
 use inkwell::execution_engine;
 use inkwell::execution_engine::{ExecutionEngine, JitFunction};
 use inkwell::module::{Linkage, Module};
+use inkwell::passes::PassManager;
 use inkwell::targets::{
     CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine, TargetTriple,
 };
@@ -65,6 +66,7 @@ pub struct Codegen<'ctx> {
     pub builder: Builder<'ctx>,
     pub execution_engine: ExecutionEngine<'ctx>,
     pub types: Types<'ctx>,
+    pub passes: PassManager<FunctionValue<'ctx>>,
     // pub loop_stack: Vec<Loop<'ctx>>,
 }
 
@@ -133,6 +135,8 @@ impl<'ctx> Codegen<'ctx> {
 
         self.builder
             .build_return(Some(&self.types.i32_type.const_int(0, false)));
+
+        self.passes.run_on(&main_fn_value);
 
         self.module
             .print_to_file(format!("./{}.ll", filename))
