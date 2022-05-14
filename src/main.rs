@@ -73,7 +73,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         passes: opt.pass_manager,
     };
 
-    cdg.generate_llvm("main");
+    cdg.generate_llvm("main2");
 
     let bdr = BinaryGenerator::new("main");
     bdr.compile()?;

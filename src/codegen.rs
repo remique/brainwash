@@ -92,13 +92,10 @@ impl<'ctx> Codegen<'ctx> {
         let entry_block = self.context.append_basic_block(main_fn_value, "entry");
         self.builder.position_at_end(entry_block);
 
-        // Allocate data* and ptr*
+        // Allocate data*
         let data_alloca = self
             .builder
             .build_alloca(self.types.i8_ptr_type, "data_alloca");
-        let ptr_alloca = self
-            .builder
-            .build_alloca(self.types.i8_ptr_type, "ptr_alloca");
 
         let mem_size_const = self.types.i64_type.const_int(1024, false);
         let element_size_const = self.types.i64_type.const_int(1, false);
@@ -115,7 +112,6 @@ impl<'ctx> Codegen<'ctx> {
             .unwrap();
 
         self.builder.build_store(data_alloca, calloc_data_basic_val);
-        self.builder.build_store(ptr_alloca, calloc_data_basic_val);
 
         if let Node::Expr(expr_val) = &self.input {
             self.match_input(
@@ -126,12 +122,6 @@ impl<'ctx> Codegen<'ctx> {
                 loop_stack,
             );
         }
-
-        self.builder.build_free(
-            self.builder
-                .build_load(data_alloca, "load")
-                .into_pointer_value(),
-        );
 
         self.builder
             .build_return(Some(&self.types.i32_type.const_int(0, false)));
@@ -219,29 +209,24 @@ impl<'ctx> Codegen<'ctx> {
     fn emit_change_data_value(&self, data_ptr: PointerValue<'ctx>, value: i32) {
         let amount_const = self.types.i8_type.const_int(value as u64, false);
 
+        let pointer = self.load_current_pointer(data_ptr);
         let value = self.load_current_value(data_ptr);
 
-        let result = self.builder.build_int_add(
-            self.load_current_value(data_ptr),
-            amount_const,
-            "add_data_ptr",
-        );
+        let result = self
+            .builder
+            .build_int_add(value, amount_const, "add_data_ptr");
 
-        self.builder
-            .build_store(self.load_current_pointer(data_ptr), result);
+        self.builder.build_store(pointer, result);
     }
 
-    fn emit_move_pointer(&self, data_ptr: PointerValue, value: i32) {
+    fn emit_move_pointer(&self, data_ptr: PointerValue<'ctx>, value: i32) {
         let amount_const = self.types.i32_type.const_int(value as u64, false);
 
-        let ptr_load = self
-            .builder
-            .build_load(data_ptr, "load_ptr")
-            .into_pointer_value();
+        let pointer = self.load_current_pointer(data_ptr);
 
         let result = unsafe {
             self.builder
-                .build_in_bounds_gep(ptr_load, &[amount_const], "move_ptr")
+                .build_in_bounds_gep(pointer, &[amount_const], "move_ptr")
         };
 
         self.builder.build_store(data_ptr, result);

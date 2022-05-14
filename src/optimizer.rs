@@ -25,16 +25,7 @@ impl OptWrapper<FunctionValue<'_>> {
         self.initialize();
     }
 
-    pub fn run_passes(&self) {
-        self.pass_manager.add_verifier_pass();
-        self.pass_manager.add_early_cse_pass();
-        self.pass_manager.add_cfg_simplification_pass();
-        self.pass_manager.add_scalar_repl_aggregates_pass();
-        self.pass_manager.add_instruction_combining_pass();
-        self.pass_manager.add_loop_vectorize_pass();
-        self.pass_manager.add_slp_vectorize_pass();
-        self.pass_manager.add_verifier_pass();
-    }
+    pub fn run_passes(&self) {}
 
     pub fn initialize(&self) {
         self.pass_manager.initialize();

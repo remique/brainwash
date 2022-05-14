@@ -4,12 +4,6 @@ use std::io;
 use std::path::Path;
 use std::process::{Command, Output};
 
-pub struct Optimizer;
-
-impl Optimizer {
-    pub fn new() {}
-}
-
 pub struct BinaryGenerator<T: AsRef<Path> + Display> {
     input: T,
 }
@@ -22,6 +16,7 @@ impl<T: AsRef<Path> + Display> BinaryGenerator<T> {
     /// Function that uses all the utility functions that
     /// generate an executable binary
     pub fn compile(&self) -> Result<(), Box<dyn Error>> {
+        self.optimize_ll()?;
         self.generate_bitcode()?;
         self.generate_assembly()?;
         self.generate_executable()?;
@@ -37,6 +32,28 @@ impl<T: AsRef<Path> + Display> BinaryGenerator<T> {
                 format!("{}.ll", self.input).as_str(),
                 "-o",
                 format!("{}.bc", self.input).as_str(),
+            ])
+            .output()
+    }
+
+    fn optimize_ll(&self) -> io::Result<Output> {
+        Command::new("opt")
+            .args(&[
+                "-verify",
+                "-mem2reg",
+                "-instcombine",
+                "-simplifycfg",
+                "-inline",
+                "-constmerge",
+                "-early-cse",
+                "-sroa",
+                "-gvn",
+                "-adce",
+                "-verify",
+                format!("{}2.ll", self.input).as_str(),
+                "-o",
+                format!("{}.ll", self.input).as_str(),
+                "-S",
             ])
             .output()
     }
@@ -70,6 +87,7 @@ impl<T: AsRef<Path> + Display> BinaryGenerator<T> {
             .args(&[
                 "-rf",
                 format!("{}.ll", self.input).as_str(),
+                format!("{}2.ll", self.input).as_str(),
                 format!("{}.bc", self.input).as_str(),
                 format!("{}.o", self.input).as_str(),
             ])
